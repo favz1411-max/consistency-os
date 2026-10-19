@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="112" fill="#09090b" />
+  <!-- Subtle outer calibration ring -->
+  <circle cx="256" cy="256" r="180" fill="none" stroke="#27272a" stroke-width="14" stroke-dasharray="4 8" />
+  <!-- Background progress track -->
+  <circle cx="256" cy="256" r="140" fill="none" stroke="#18181b" stroke-width="28" />
+  <!-- Active Consistency Arc in Emerald -->
+  <path d="M 256 116 A 140 140 0 1 1 140 335" fill="none" stroke="#10b981" stroke-width="28" stroke-linecap="round" />
+  <!-- Inner focus target dot -->
+  <circle cx="256" cy="256" r="32" fill="#10b981" />
+  <circle cx="256" cy="256" r="14" fill="#09090b" />
+</svg>

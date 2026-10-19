@@ -1,0 +1,6 @@
+{
+  "name": "Consistency OS",
+  "description": "Personal health, fitness, habit-building, and digital discipline operating system with offline persistence and iPhone PWA support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

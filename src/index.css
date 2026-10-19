@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 16px);
+  }
+  .pt-safe {
+    padding-top: max(env(safe-area-inset-top), 12px);
+  }
+}
+
+:root {
+  color-scheme: dark light;
+}
+
+/* iOS tap highlight & bouncy overscroll optimization */
+html {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Hide scrollbar for clean horizontal date scrollers while retaining touch scrolling */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

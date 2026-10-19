@@ -377,10 +377,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <strong>Hosting vs Data Storage:</strong> GitHub Pages serves the static application bundle (HTML, JS, CSS, PWA service worker) over free HTTPS. It does <em>not</em> store any of your data. Your data lives exclusively on your iPhone inside IndexedDB.
           </p>
           <div className="p-3 bg-zinc-950/60 rounded-xl border border-zinc-800/80 text-[11px] text-zinc-400 space-y-1">
-            <p>1. Push this project to a free public GitHub repository.</p>
-            <p>2. In GitHub, go to <strong>Settings → Pages</strong>.</p>
-            <p>3. Under Build and deployment, set Source to <strong>GitHub Actions</strong> (Static HTML / Vite).</p>
-            <p>4. Your free custom app URL will be available at <code>https://&lt;username&gt;.github.io/&lt;repo&gt;/</code> with zero running costs forever.</p>
+            <p>1. Push this project to <code>github.com/favz1411-max/consistency-os</code> on the <code>main</code> branch.</p>
+            <p>2. In GitHub, open <strong>Settings → Pages</strong>.</p>
+            <p>3. Under <strong>Build and deployment</strong>, set <strong>Source</strong> to <strong>GitHub Actions</strong>.</p>
+            <p>4. The included <code>.github/workflows/deploy.yml</code> workflow will automatically build and publish your app to <code>https://favz1411-max.github.io/consistency-os/</code>.</p>
           </div>
         </div>
       </section>

@@ -51,7 +51,7 @@ export const AppleFitnessStepsModal: React.FC<AppleFitnessStepsModalProps> = ({
   const baseAppUrl =
     typeof window !== 'undefined'
       ? `${window.location.origin}${window.location.pathname}`
-      : 'https://your-app-url.github.io/';
+      : 'https://favz1411-max.github.io/consistency-os/';
 
   const shortcutTemplateUrl = `${baseAppUrl}?steps=[Calculation Result]&source=apple_fitness`;
 

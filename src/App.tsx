@@ -1,522 +1,231 @@
-/**
- * Consistency OS — Personal Fitness & Digital Discipline Operating System
- * Full local-first, zero-runtime-cost, offline-capable PWA architecture.
- */
-
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Task, TaskCompletion, UserSettings, RecurrenceType } from './types';
+import { formatLocalDate, getTasksForDate } from './utils/calculations';
+import { getStoredSettings, saveStoredSettings } from './utils/storage';
 import {
-  Habit,
-  HabitLog,
-  Workout,
-  WorkoutRoutine,
-  BodyMeasurement,
-  DailyWaterLog,
-  SleepRecord,
-  DailyNutritionLog,
-  DigitalSession,
-  DailyCommitment,
-  FocusSession,
-  UserSettings
-} from './types';
-import {
-  openDB,
   initializeDatabase,
-  getAllFromStore,
-  putInStore,
-  deleteFromStore,
-  DEFAULT_INITIAL_HABITS,
-  DEFAULT_ROUTINES
+  saveTask,
+  saveTasksBatch,
+  removeTask,
+  saveTaskCompletion
 } from './utils/db';
-import { getStoredSettings, saveStoredSettings, DEFAULT_SETTINGS } from './utils/storage';
 import { TabBar, TabId } from './components/TabBar';
-import { OfflineIndicator } from './components/OfflineIndicator';
-import { RestTimerModal } from './components/RestTimerModal';
-import { AppleFitnessStepsModal } from './components/AppleFitnessStepsModal';
-import { parseStepsFromText } from './utils/calculations';
+import { TaskModal } from './components/TaskModal';
 import { TodayView } from './views/TodayView';
-import { FitnessView } from './views/FitnessView';
-import { HabitsView } from './views/HabitsView';
-import { DisciplineView } from './views/DisciplineView';
+import { CalendarView } from './views/CalendarView';
 import { ProgressView } from './views/ProgressView';
 import { SettingsView } from './views/SettingsView';
 
-export default function App() {
+export function App() {
   const [activeTab, setActiveTab] = useState<TabId>('today');
-  const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
-  const [isRestTimerOpen, setIsRestTimerOpen] = useState<boolean>(false);
-  const [isStepsModalOpen, setIsStepsModalOpen] = useState<boolean>(false);
-  const [stepSyncNotice, setStepSyncNotice] = useState<string | null>(null);
+  const [todayStr] = useState<string>(() => formatLocalDate(new Date()));
+  const [selectedDate, setSelectedDate] = useState<string>(() => formatLocalDate(new Date()));
+  const [settings, setSettings] = useState<UserSettings>(() => getStoredSettings());
+
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [completions, setCompletions] = useState<TaskCompletion[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // App State collections
-  const [habits, setHabits] = useState<Habit[]>([]);
-  const [habitLogs, setHabitLogs] = useState<HabitLog[]>([]);
-  const [workouts, setWorkouts] = useState<Workout[]>([]);
-  const [routines, setRoutines] = useState<WorkoutRoutine[]>([]);
-  const [bodyLogs, setBodyLogs] = useState<BodyMeasurement[]>([]);
-  const [waterLogs, setWaterLogs] = useState<DailyWaterLog[]>([]);
-  const [sleepLogs, setSleepLogs] = useState<SleepRecord[]>([]);
-  const [nutritionLogs, setNutritionLogs] = useState<DailyNutritionLog[]>([]);
-  const [digitalSessions, setDigitalSessions] = useState<DigitalSession[]>([]);
-  const [commitments, setCommitments] = useState<DailyCommitment[]>([]);
-  const [focusSessions, setFocusSessions] = useState<FocusSession[]>([]);
+  // Task Modal State
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState<boolean>(false);
+  const [modalInitialDate, setModalInitialDate] = useState<string>(todayStr);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
-  // Current local date in YYYY-MM-DD
-  const getTodayDateString = () => {
-    const d = new Date();
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
-  const todayStr = getTodayDateString();
-
-  // Load all data from IndexedDB
-  const reloadAllData = useCallback(async () => {
+  const loadData = useCallback(async () => {
     try {
-      await initializeDatabase();
-      const loadedHabits = await getAllFromStore<Habit>('habits');
-      const loadedHabitLogs = await getAllFromStore<HabitLog>('habit_logs');
-      const loadedWorkouts = await getAllFromStore<Workout>('workouts');
-      const loadedRoutines = await getAllFromStore<WorkoutRoutine>('routines');
-      const loadedBodyLogs = await getAllFromStore<BodyMeasurement>('body_logs');
-      const loadedWaterLogs = await getAllFromStore<DailyWaterLog>('water_logs');
-      const loadedSleepLogs = await getAllFromStore<SleepRecord>('sleep_logs');
-      const loadedNutritionLogs = await getAllFromStore<DailyNutritionLog>('nutrition_logs');
-      const loadedDigitalLogs = await getAllFromStore<DigitalSession>('digital_logs');
-      const loadedCommitments = await getAllFromStore<DailyCommitment>('commitments');
-      const loadedFocusSessions = await getAllFromStore<FocusSession>('focus_sessions');
-
-      setHabits(loadedHabits.sort((a, b) => a.order - b.order));
-      setHabitLogs(loadedHabitLogs);
-      setWorkouts(loadedWorkouts);
-      setRoutines(loadedRoutines);
-      setBodyLogs(loadedBodyLogs);
-      setWaterLogs(loadedWaterLogs);
-      setSleepLogs(loadedSleepLogs);
-      setNutritionLogs(loadedNutritionLogs);
-      setDigitalSessions(loadedDigitalLogs);
-      setCommitments(loadedCommitments);
-      setFocusSessions(loadedFocusSessions);
+      const { tasks: loadedTasks, completions: loadedCompletions } = await initializeDatabase();
+      setTasks(loadedTasks);
+      setCompletions(loadedCompletions);
     } catch (e) {
-      console.error('Error loading IndexedDB data:', e);
+      console.error('Failed to initialize Consistency OS database:', e);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  // Initial mount
   useEffect(() => {
-    const stored = getStoredSettings();
-    setSettings(stored);
-    reloadAllData();
-  }, [reloadAllData]);
+    loadData();
+  }, [loadData]);
 
-  // Ensure a step habit exists and return it
-  const ensureStepHabit = useCallback(async (): Promise<Habit> => {
-    const existing = habits.find(
-      h => h.id === 'habit_walk' || h.name.toLowerCase().includes('step') || h.unit === 'steps'
-    );
-    if (existing) return existing;
-
-    const fallbackHabit: Habit =
-      DEFAULT_INITIAL_HABITS.find(h => h.id === 'habit_walk') || {
-        id: 'habit_walk',
-        name: 'Walk or move daily (8,000+ steps)',
-        category: 'fitness',
-        targetType: 'numeric',
-        targetValue: 8000,
-        unit: 'steps',
-        scheduleDays: [0, 1, 2, 3, 4, 5, 6],
-        routine: 'anytime',
-        order: habits.length + 1,
-        createdAt: new Date().toISOString()
-      };
-
-    await putInStore('habits', fallbackHabit);
-    setHabits(prev => [...prev, fallbackHabit]);
-    return fallbackHabit;
-  }, [habits]);
-
-  // Steps logging (single day)
-  const handleLogSteps = useCallback(
-    async (steps: number, sourceLabel = 'Apple Fitness', dateStr = todayStr) => {
-      const stepHabit = await ensureStepHabit();
-      const logId = `${dateStr}_${stepHabit.id}`;
-      const updatedLog: HabitLog & { id: string } = {
-        id: logId,
-        date: dateStr,
-        habitId: stepHabit.id,
-        completed: steps >= (stepHabit.targetValue || 8000),
-        value: steps,
-        notes: sourceLabel,
-        updatedAt: new Date().toISOString()
-      };
-      await putInStore('habit_logs', updatedLog);
-      setHabitLogs(prev => {
-        const idx = prev.findIndex(l => l.date === dateStr && l.habitId === stepHabit.id);
-        if (idx >= 0) {
-          const copy = [...prev];
-          copy[idx] = updatedLog;
-          return copy;
-        }
-        return [...prev, updatedLog];
-      });
-    },
-    [ensureStepHabit, todayStr]
-  );
-
-  // Batch import steps (multi-day from Apple Health XML / CSV / JSON)
-  const handleBatchImportSteps = useCallback(
-    async (entries: Array<{ date: string; steps: number }>, sourceLabel: string) => {
-      const stepHabit = await ensureStepHabit();
-      const nowIso = new Date().toISOString();
-      for (const entry of entries) {
-        const logId = `${entry.date}_${stepHabit.id}`;
-        const updatedLog: HabitLog & { id: string } = {
-          id: logId,
-          date: entry.date,
-          habitId: stepHabit.id,
-          completed: entry.steps >= (stepHabit.targetValue || 8000),
-          value: entry.steps,
-          notes: sourceLabel,
-          updatedAt: nowIso
-        };
-        await putInStore('habit_logs', updatedLog);
-      }
-      const refreshedLogs = await getAllFromStore<HabitLog>('habit_logs');
-      setHabitLogs(refreshedLogs);
-    },
-    [ensureStepHabit]
-  );
-
-  // Detect iOS Shortcut URL parameter (?steps=8450&source=apple_fitness) after DB loads
+  // Sync light/dark theme class on document root
   useEffect(() => {
-    if (isLoading || typeof window === 'undefined') return;
-    const search = window.location.search;
-    if (!search || !search.toLowerCase().includes('steps=')) return;
-
-    const extracted = parseStepsFromText(search);
-    if (extracted !== null) {
-      handleLogSteps(extracted, 'Apple Fitness iOS Shortcut').then(() => {
-        setStepSyncNotice(
-          `Synced ${extracted.toLocaleString()} steps from Apple Fitness Shortcut!`
-        );
-      });
-      const cleanUrl = window.location.pathname + window.location.hash;
-      window.history.replaceState({}, '', cleanUrl);
+    const root = document.documentElement;
+    if (settings.theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
     }
-  }, [isLoading, handleLogSteps]);
+  }, [settings.theme]);
 
-  // Update Settings handler
   const handleUpdateSettings = (newSettings: UserSettings) => {
     setSettings(newSettings);
     saveStoredSettings(newSettings);
   };
 
-  // Toggle habit completion on a given date (defaults to today)
-  const handleToggleHabit = async (habitId: string, currentStatus: boolean, customValue?: number) => {
-    const newStatus = !currentStatus;
-    const logId = `${todayStr}_${habitId}`;
-    const updatedLog: HabitLog & { id: string } = {
-      id: logId,
-      date: todayStr,
-      habitId,
-      completed: newStatus,
-      value: customValue,
+  const handleToggleTask = async (taskId: string, dateStr: string) => {
+    const completionId = `${dateStr}_${taskId}`;
+    const existing = completions.find(c => c.date === dateStr && c.taskId === taskId);
+    const nextCompleted = !(existing?.completed ?? false);
+
+    const record: TaskCompletion = {
+      id: completionId,
+      date: dateStr,
+      taskId,
+      completed: nextCompleted,
       updatedAt: new Date().toISOString()
     };
 
-    await putInStore('habit_logs', updatedLog);
-    setHabitLogs(prev => {
-      const idx = prev.findIndex(l => l.date === todayStr && l.habitId === habitId);
-      if (idx >= 0) {
-        const copy = [...prev];
-        copy[idx] = updatedLog;
-        return copy;
-      }
-      return [...prev, updatedLog];
-    });
+    const nextCompletions = nextCompleted
+      ? [...completions.filter(c => c.id !== completionId), record]
+      : completions.filter(c => c.id !== completionId);
+
+    setCompletions(nextCompletions);
+    await saveTaskCompletion(record, nextCompletions);
   };
 
-  // Save / Update Habit
-  const handleSaveHabit = async (habit: Habit) => {
-    await putInStore('habits', habit);
-    setHabits(prev => {
-      const idx = prev.findIndex(h => h.id === habit.id);
-      if (idx >= 0) {
-        const copy = [...prev];
-        copy[idx] = habit;
-        return copy;
-      }
-      return [...prev, habit];
-    });
-  };
-
-  // Delete Habit
-  const handleDeleteHabit = async (habitId: string) => {
-    await deleteFromStore('habits', habitId);
-    setHabits(prev => prev.filter(h => h.id !== habitId));
-  };
-
-  // Reorder Habits
-  const handleReorderHabits = async (reorderedHabits: Habit[]) => {
-    setHabits(reorderedHabits);
-    for (const h of reorderedHabits) {
-      await putInStore('habits', h);
+  const handleSaveTask = async (taskData: {
+    id?: string;
+    title: string;
+    time?: string;
+    category?: string;
+    date: string;
+    recurrence: RecurrenceType;
+    repeatDays?: number[];
+  }) => {
+    if (taskData.id) {
+      const existing = tasks.find(t => t.id === taskData.id);
+      if (!existing) return;
+      const updatedTask: Task = {
+        ...existing,
+        title: taskData.title,
+        time: taskData.time,
+        category: taskData.category,
+        date: taskData.date,
+        recurrence: taskData.recurrence,
+        repeatDays: taskData.repeatDays
+      };
+      const nextTasks = tasks.map(t => (t.id === updatedTask.id ? updatedTask : t));
+      setTasks(nextTasks);
+      await saveTask(updatedTask, nextTasks);
+    } else {
+      const maxOrder = tasks.reduce((max, t) => Math.max(max, t.order || 0), 0);
+      const newTask: Task = {
+        id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        title: taskData.title,
+        time: taskData.time,
+        category: taskData.category,
+        date: taskData.date,
+        recurrence: taskData.recurrence,
+        repeatDays: taskData.repeatDays,
+        order: maxOrder + 1,
+        createdAt: new Date().toISOString()
+      };
+      const nextTasks = [...tasks, newTask];
+      setTasks(nextTasks);
+      await saveTask(newTask, nextTasks);
     }
   };
 
-  // Water Intake logging
-  const handleAddWater = async (amountMl: number) => {
-    const existing = waterLogs.find(w => w.date === todayStr) || {
-      date: todayStr,
-      totalMl: 0,
-      targetMl: settings.waterTargetMl,
-      entries: []
-    };
+  const handleDeleteTask = async (taskId: string) => {
+    const nextTasks = tasks.filter(t => t.id !== taskId);
+    const nextCompletions = completions.filter(c => c.taskId !== taskId);
+    setTasks(nextTasks);
+    setCompletions(nextCompletions);
+    await removeTask(taskId, nextTasks, nextCompletions);
+  };
 
-    const newEntry = {
-      id: 'w_' + Date.now(),
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      amountMl
-    };
+  const handleReorderTask = async (
+    taskId: string,
+    direction: 'up' | 'down',
+    dateStr: string
+  ) => {
+    const scheduled = getTasksForDate(dateStr, tasks, completions).map(o => o.task);
+    const currentIndex = scheduled.findIndex(t => t.id === taskId);
+    if (currentIndex === -1) return;
 
-    const updatedLog: DailyWaterLog = {
-      ...existing,
-      totalMl: existing.totalMl + amountMl,
-      entries: [...existing.entries, newEntry]
-    };
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= scheduled.length) return;
 
-    await putInStore('water_logs', updatedLog);
-    setWaterLogs(prev => {
-      const idx = prev.findIndex(w => w.date === todayStr);
-      if (idx >= 0) {
-        const copy = [...prev];
-        copy[idx] = updatedLog;
-        return copy;
-      }
-      return [...prev, updatedLog];
+    const reorderedScheduled = [...scheduled];
+    const [moved] = reorderedScheduled.splice(currentIndex, 1);
+    reorderedScheduled.splice(targetIndex, 0, moved);
+
+    // Assign sequential orders to the scheduled tasks for this date
+    const orderMap = new Map<string, number>();
+    reorderedScheduled.forEach((t, idx) => {
+      orderMap.set(t.id, idx + 1);
     });
+
+    const nextTasks = tasks.map(t =>
+      orderMap.has(t.id) ? { ...t, order: orderMap.get(t.id)! } : t
+    );
+
+    setTasks(nextTasks);
+    await saveTasksBatch(nextTasks);
   };
 
-  // Sleep logging
-  const handleUpdateSleep = async (bedtime: string, wakeTime: string, quality: number) => {
-    const [bH, bM] = bedtime.split(':').map(Number);
-    const [wH, wM] = wakeTime.split(':').map(Number);
-    const bTotal = bH * 60 + bM;
-    const wTotal = wH * 60 + wM;
-    const durationMinutes = wTotal >= bTotal ? wTotal - bTotal : 24 * 60 - bTotal + wTotal;
-
-    const sleepRecord: SleepRecord = {
-      id: 'sleep_' + todayStr,
-      date: todayStr,
-      bedtime,
-      wakeTime,
-      durationMinutes,
-      quality,
-      notes: ''
-    };
-
-    await putInStore('sleep_logs', sleepRecord);
-    setSleepLogs(prev => {
-      const idx = prev.findIndex(s => s.date === todayStr);
-      if (idx >= 0) {
-        const copy = [...prev];
-        copy[idx] = sleepRecord;
-        return copy;
-      }
-      return [...prev, sleepRecord];
-    });
+  const openAddModal = (dateStr: string) => {
+    setEditingTask(null);
+    setModalInitialDate(dateStr);
+    setIsTaskModalOpen(true);
   };
 
-  // Workout operations
-  const handleSaveWorkout = async (workout: Workout) => {
-    await putInStore('workouts', workout);
-    setWorkouts(prev => [...prev.filter(w => w.id !== workout.id), workout]);
+  const openEditModal = (task: Task) => {
+    setEditingTask(task);
+    setModalInitialDate(task.date);
+    setIsTaskModalOpen(true);
   };
-
-  const handleDeleteWorkout = async (workoutId: string) => {
-    await deleteFromStore('workouts', workoutId);
-    setWorkouts(prev => prev.filter(w => w.id !== workoutId));
-  };
-
-  const handleSaveRoutine = async (routine: WorkoutRoutine) => {
-    await putInStore('routines', routine);
-    setRoutines(prev => [...prev.filter(r => r.id !== routine.id), routine]);
-  };
-
-  const handleDeleteRoutine = async (routineId: string) => {
-    await deleteFromStore('routines', routineId);
-    setRoutines(prev => prev.filter(r => r.id !== routineId));
-  };
-
-  // Digital discipline operations
-  const handleSaveSession = async (session: DigitalSession) => {
-    await putInStore('digital_logs', session);
-    setDigitalSessions(prev => [...prev, session]);
-  };
-
-  const handleDeleteSession = async (sessionId: string) => {
-    await deleteFromStore('digital_logs', sessionId);
-    setDigitalSessions(prev => prev.filter(s => s.id !== sessionId));
-  };
-
-  const handleSaveCommitment = async (commitment: DailyCommitment) => {
-    await putInStore('commitments', commitment);
-    setCommitments(prev => {
-      const idx = prev.findIndex(c => c.date === commitment.date);
-      if (idx >= 0) {
-        const copy = [...prev];
-        copy[idx] = commitment;
-        return copy;
-      }
-      return [...prev, commitment];
-    });
-  };
-
-  const handleSaveFocusSession = async (session: FocusSession) => {
-    await putInStore('focus_sessions', session);
-    setFocusSessions(prev => [...prev, session]);
-  };
-
-  const handleUpdateAppLimits = async (limits: Record<string, number>) => {
-    const updated = { ...settings, appLimits: limits };
-    handleUpdateSettings(updated);
-  };
-
-  // Body progress operations
-  const handleSaveBodyLog = async (record: BodyMeasurement) => {
-    await putInStore('body_logs', record);
-    setBodyLogs(prev => [...prev.filter(b => b.id !== record.id), record]);
-  };
-
-  const handleDeleteBodyLog = async (id: string) => {
-    await deleteFromStore('body_logs', id);
-    setBodyLogs(prev => prev.filter(b => b.id !== id));
-  };
-
-  // Current step data derived from step habit log
-  const stepHabit = habits.find(
-    h => h.id === 'habit_walk' || h.name.toLowerCase().includes('step') || h.unit === 'steps'
-  );
-  const todayStepLog = stepHabit
-    ? habitLogs.find(l => l.date === todayStr && l.habitId === stepHabit.id)
-    : undefined;
-  const currentSteps = todayStepLog?.value || 0;
-  const targetSteps = stepHabit?.targetValue || 8000;
-  const lastStepSyncSource = todayStepLog?.notes;
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-white">
-      {/* Offline Status Toast */}
-      <OfflineIndicator />
-
-      {/* Apple Fitness Shortcut Deep-Link Sync Banner */}
-      {stepSyncNotice && (
-        <div className="w-full max-w-xl md:max-w-3xl lg:max-w-5xl mx-auto px-4 sm:px-6 pt-3">
-          <div className="p-3 rounded-2xl bg-emerald-950/80 border border-emerald-700/80 text-xs text-emerald-200 flex items-center justify-between gap-2">
-            <span>{stepSyncNotice}</span>
-            <button
-              type="button"
-              onClick={() => setStepSyncNotice(null)}
-              className="text-emerald-400 hover:text-white font-semibold px-2 py-0.5"
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Main View Container (responsive mobile canvas up to max-w-5xl on desktop) */}
-      <main className="flex-1 w-full max-w-xl md:max-w-3xl lg:max-w-5xl mx-auto px-4 sm:px-6 pt-safe">
+    <div className="min-h-screen bg-[#F6F7F9] dark:bg-[#0B0F17] text-slate-900 dark:text-slate-100 transition-colors">
+      <main className="max-w-lg mx-auto px-4 pt-safe pb-24">
         {isLoading ? (
-          <div className="h-96 flex flex-col items-center justify-center space-y-3">
-            <div className="w-10 h-10 rounded-full border-2 border-zinc-700 border-t-emerald-500 animate-spin" />
-            <p className="text-xs text-zinc-400">Loading Consistency OS...</p>
+          <div className="py-20 text-center text-xs text-slate-400">
+            Loading planner...
           </div>
         ) : (
           <>
             {activeTab === 'today' && (
               <TodayView
+                selectedDate={selectedDate}
                 todayStr={todayStr}
-                habits={habits}
-                habitLogs={habitLogs}
-                workouts={workouts}
-                waterLogs={waterLogs}
-                sleepLogs={sleepLogs}
-                digitalSessions={digitalSessions}
-                commitments={commitments}
-                settings={settings}
-                onToggleHabit={handleToggleHabit}
-                onAddWater={handleAddWater}
-                onUpdateSleep={handleUpdateSleep}
-                onLogSteps={handleLogSteps}
-                onOpenStepsModal={() => setIsStepsModalOpen(true)}
-                onNavigateTab={setActiveTab}
-                onOpenRestTimer={() => setIsRestTimerOpen(true)}
+                startOfWeek={settings.startOfWeek}
+                tasks={tasks}
+                completions={completions}
+                onSelectDate={setSelectedDate}
+                onToggleTask={handleToggleTask}
+                onOpenAddModal={openAddModal}
+                onOpenEditModal={openEditModal}
+                onDeleteTask={handleDeleteTask}
+                onReorderTask={handleReorderTask}
               />
             )}
 
-            {activeTab === 'fitness' && (
-              <FitnessView
+            {activeTab === 'calendar' && (
+              <CalendarView
+                selectedDate={selectedDate}
                 todayStr={todayStr}
-                workouts={workouts}
-                routines={routines}
-                settings={settings}
-                currentSteps={currentSteps}
-                targetSteps={targetSteps}
-                lastStepSyncSource={lastStepSyncSource}
-                onOpenStepsModal={() => setIsStepsModalOpen(true)}
-                onSaveWorkout={handleSaveWorkout}
-                onSaveRoutine={handleSaveRoutine}
-                onDeleteRoutine={handleDeleteRoutine}
-                onDeleteWorkout={handleDeleteWorkout}
-                onOpenRestTimer={() => setIsRestTimerOpen(true)}
-              />
-            )}
-
-            {activeTab === 'habits' && (
-              <HabitsView
-                todayStr={todayStr}
-                habits={habits}
-                habitLogs={habitLogs}
-                onToggleHabit={handleToggleHabit}
-                onSaveHabit={handleSaveHabit}
-                onDeleteHabit={handleDeleteHabit}
-                onReorderHabits={handleReorderHabits}
-              />
-            )}
-
-            {activeTab === 'discipline' && (
-              <DisciplineView
-                todayStr={todayStr}
-                digitalSessions={digitalSessions}
-                commitments={commitments}
-                focusSessions={focusSessions}
-                settings={settings}
-                onSaveSession={handleSaveSession}
-                onDeleteSession={handleDeleteSession}
-                onSaveCommitment={handleSaveCommitment}
-                onSaveFocusSession={handleSaveFocusSession}
-                onUpdateAppLimits={handleUpdateAppLimits}
+                startOfWeek={settings.startOfWeek}
+                tasks={tasks}
+                completions={completions}
+                onSelectDate={setSelectedDate}
+                onToggleTask={handleToggleTask}
+                onOpenAddModal={openAddModal}
+                onOpenEditModal={openEditModal}
+                onDeleteTask={handleDeleteTask}
               />
             )}
 
             {activeTab === 'progress' && (
               <ProgressView
                 todayStr={todayStr}
-                habits={habits}
-                habitLogs={habitLogs}
-                workouts={workouts}
-                bodyLogs={bodyLogs}
-                waterLogs={waterLogs}
-                sleepLogs={sleepLogs}
-                digitalSessions={digitalSessions}
-                settings={settings}
-                onSaveBodyLog={handleSaveBodyLog}
-                onDeleteBodyLog={handleDeleteBodyLog}
+                startOfWeek={settings.startOfWeek}
+                tasks={tasks}
+                completions={completions}
+                onSelectDateAndOpenToday={dateStr => {
+                  setSelectedDate(dateStr);
+                  setActiveTab('today');
+                }}
               />
             )}
 
@@ -524,34 +233,25 @@ export default function App() {
               <SettingsView
                 settings={settings}
                 onUpdateSettings={handleUpdateSettings}
-                onDataReload={reloadAllData}
-                onOpenStepsModal={() => setIsStepsModalOpen(true)}
+                onDataRestored={loadData}
               />
             )}
           </>
         )}
       </main>
 
-      {/* Global Workout Rest Timer Modal */}
-      <RestTimerModal
-        isOpen={isRestTimerOpen}
-        onClose={() => setIsRestTimerOpen(false)}
-        defaultDurationSeconds={settings.restTimerSeconds}
-      />
-
-      {/* Global Apple Fitness & Daily Steps Sync Modal */}
-      <AppleFitnessStepsModal
-        isOpen={isStepsModalOpen}
-        onClose={() => setIsStepsModalOpen(false)}
-        currentSteps={currentSteps}
-        targetSteps={targetSteps}
-        lastSyncSource={lastStepSyncSource}
-        onSaveSteps={(steps, sourceLabel) => handleLogSteps(steps, sourceLabel)}
-        onBatchImportSteps={handleBatchImportSteps}
-      />
-
-      {/* Bottom Mobile Tab Bar */}
       <TabBar activeTab={activeTab} onSelectTab={setActiveTab} />
+
+      <TaskModal
+        isOpen={isTaskModalOpen}
+        initialDate={modalInitialDate}
+        editingTask={editingTask}
+        onClose={() => setIsTaskModalOpen(false)}
+        onSave={handleSaveTask}
+        onDelete={handleDeleteTask}
+      />
     </div>
   );
 }
+
+export default App;

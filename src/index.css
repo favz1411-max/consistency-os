@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  }
+
+  .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
 @layer utilities {
   .pb-safe {
     padding-bottom: max(env(safe-area-inset-bottom), 16px);
@@ -10,7 +23,7 @@
 }
 
 :root {
-  color-scheme: dark light;
+  color-scheme: light dark;
 }
 
 /* iOS tap highlight & bouncy overscroll optimization */

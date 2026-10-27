@@ -1,14 +1,12 @@
 import React from 'react';
 import {
-  CalendarDays,
-  Dumbbell,
-  CheckCircle2,
-  PhoneOff,
-  TrendingUp,
+  CheckSquare,
+  Calendar,
+  BarChart2,
   Settings
 } from 'lucide-react';
 
-export type TabId = 'today' | 'fitness' | 'habits' | 'discipline' | 'progress' | 'settings';
+export type TabId = 'today' | 'calendar' | 'progress' | 'settings';
 
 interface TabBarProps {
   activeTab: TabId;
@@ -17,43 +15,36 @@ interface TabBarProps {
 
 export const TabBar: React.FC<TabBarProps> = ({ activeTab, onSelectTab }) => {
   const tabs: Array<{ id: TabId; label: string; icon: React.ComponentType<{ className?: string }> }> = [
-    { id: 'today', label: 'Today', icon: CalendarDays },
-    { id: 'fitness', label: 'Fitness', icon: Dumbbell },
-    { id: 'habits', label: 'Habits', icon: CheckCircle2 },
-    { id: 'discipline', label: 'Discipline', icon: PhoneOff },
-    { id: 'progress', label: 'Progress', icon: TrendingUp },
+    { id: 'today', label: 'Today', icon: CheckSquare },
+    { id: 'calendar', label: 'Calendar', icon: Calendar },
+    { id: 'progress', label: 'Progress', icon: BarChart2 },
     { id: 'settings', label: 'Settings', icon: Settings }
   ];
 
   return (
     <nav
-      aria-label="Bottom Navigation"
-      className="fixed bottom-0 left-0 right-0 z-40 border-t border-zinc-800 bg-zinc-950/90 backdrop-blur-md pb-safe"
+      aria-label="Primary Navigation"
+      className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200/80 dark:border-slate-800/80 bg-white/95 dark:bg-[#0F172A]/95 backdrop-blur-md pb-safe"
     >
-      <div className="max-w-xl mx-auto grid grid-cols-6 items-center px-1 h-16">
+      <div className="max-w-lg mx-auto grid grid-cols-4 items-center px-3 h-16 gap-1.5">
         {tabs.map(tab => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
+              type="button"
               onClick={() => onSelectTab(tab.id)}
               aria-label={tab.label}
-              className={`flex flex-col items-center justify-center min-h-[48px] py-1 transition-colors rounded-xl relative ${
-                isActive ? 'text-emerald-400' : 'text-zinc-400 hover:text-zinc-200'
+              aria-current={isActive ? 'page' : undefined}
+              className={`flex items-center justify-center gap-1.5 min-h-[42px] px-2.5 py-2 rounded-2xl text-xs font-semibold transition-colors duration-75 whitespace-nowrap ${
+                isActive
+                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'
               }`}
             >
-              <div className="relative">
-                <Icon className={`w-5 h-5 transition-transform ${isActive ? 'scale-110' : 'scale-100'}`} />
-                {isActive && (
-                  <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-emerald-400" />
-                )}
-              </div>
-              <span className={`text-[10px] tracking-tight mt-1 whitespace-nowrap font-medium ${
-                isActive ? 'text-emerald-400 font-semibold' : 'text-zinc-400'
-              }`}>
-                {tab.label}
-              </span>
+              <Icon className="w-4 h-4 shrink-0" />
+              <span>{tab.label}</span>
             </button>
           );
         })}

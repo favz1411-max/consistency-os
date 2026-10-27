@@ -1,1 +1,0 @@
-if('serviceWorker' in navigator) navigator.serviceWorker.register('/consistency-os/dev-sw.js?dev-sw', { scope: '/consistency-os/', type: 'classic' })

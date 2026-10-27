@@ -1,34 +1,26 @@
-import { UserSettings } from '../types';
+import { Task, TaskCompletion, UserSettings } from '../types';
 
 export const DEFAULT_SETTINGS: UserSettings = {
-  theme: 'dark',
-  unitSystem: 'metric',
-  waterTargetMl: 2500,
-  sleepTargetMinutes: 480, // 8 hours
+  theme: 'light',
   startOfWeek: 1, // Monday
-  restTimerSeconds: 90,
-  appLimits: {
-    Instagram: 20,
-    TikTok: 15,
-    YouTube: 30,
-    Reddit: 15,
-    'Social / Other': 20
-  },
-  focusPreserveTimer: true,
-  hapticEnabled: true,
-  appVersion: '1.0.0'
+  appVersion: '2.0.0'
 };
 
 const SETTINGS_KEY = 'consistency_os_settings';
-const ACTIVE_SESSION_KEY = 'consistency_os_active_session';
-const REST_TIMER_KEY = 'consistency_os_rest_timer';
+const TASKS_BACKUP_KEY = 'consistency_os_tasks_backup_v2';
+const COMPLETIONS_BACKUP_KEY = 'consistency_os_completions_backup_v2';
+const MIGRATION_V2_DONE_KEY = 'consistency_os_migrated_v2';
 
 export function getStoredSettings(): UserSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return DEFAULT_SETTINGS;
     const parsed = JSON.parse(raw);
-    return { ...DEFAULT_SETTINGS, ...parsed };
+    return {
+      theme: parsed.theme === 'dark' ? 'dark' : 'light',
+      startOfWeek: parsed.startOfWeek === 0 ? 0 : 1,
+      appVersion: '2.0.0'
+    };
   } catch (e) {
     console.warn('Failed to parse settings from localStorage, using defaults', e);
     return DEFAULT_SETTINGS;
@@ -43,58 +35,69 @@ export function saveStoredSettings(settings: UserSettings): void {
   }
 }
 
-export interface ActiveScrollSessionState {
-  app: string;
-  startedAt: number; // timestamp
-  elapsedSeconds: number;
-  isRunning: boolean;
-}
-
-export function getStoredActiveSession(): ActiveScrollSessionState | null {
+/**
+ * Synchronous localStorage mirror for tasks and completions so iPhone Home Screen PWA
+ * and Safari always retain immediate durability across app closes.
+ */
+export function getStoredTasksBackup(): Task[] {
   try {
-    const raw = localStorage.getItem(ACTIVE_SESSION_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const raw = localStorage.getItem(TASKS_BACKUP_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    return null;
+    return [];
   }
 }
 
-export function saveStoredActiveSession(session: ActiveScrollSessionState | null): void {
+export function saveStoredTasksBackup(tasks: Task[]): void {
   try {
-    if (!session) {
-      localStorage.removeItem(ACTIVE_SESSION_KEY);
-    } else {
-      localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(session));
-    }
+    localStorage.setItem(TASKS_BACKUP_KEY, JSON.stringify(tasks));
   } catch (e) {
-    console.error('Failed to update active session state', e);
+    console.error('Failed to mirror tasks to localStorage', e);
   }
 }
 
-export interface ActiveRestTimerState {
-  targetSeconds: number;
-  remainingSeconds: number;
-  startedAt: number;
-  isRunning: boolean;
-}
-
-export function getStoredRestTimer(): ActiveRestTimerState | null {
+export function getStoredCompletionsBackup(): TaskCompletion[] {
   try {
-    const raw = localStorage.getItem(REST_TIMER_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const raw = localStorage.getItem(COMPLETIONS_BACKUP_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    return null;
+    return [];
   }
 }
 
-export function saveStoredRestTimer(timer: ActiveRestTimerState | null): void {
+export function saveStoredCompletionsBackup(completions: TaskCompletion[]): void {
   try {
-    if (!timer) {
-      localStorage.removeItem(REST_TIMER_KEY);
-    } else {
-      localStorage.setItem(REST_TIMER_KEY, JSON.stringify(timer));
-    }
+    localStorage.setItem(COMPLETIONS_BACKUP_KEY, JSON.stringify(completions));
   } catch (e) {
-    console.error('Failed to update rest timer state', e);
+    console.error('Failed to mirror task completions to localStorage', e);
+  }
+}
+
+export function isV2MigrationDone(): boolean {
+  try {
+    return localStorage.getItem(MIGRATION_V2_DONE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function markV2MigrationDone(): void {
+  try {
+    localStorage.setItem(MIGRATION_V2_DONE_KEY, 'true');
+  } catch {
+    // ignore
+  }
+}
+
+export function clearPlannerLocalStorage(): void {
+  try {
+    localStorage.removeItem(TASKS_BACKUP_KEY);
+    localStorage.removeItem(COMPLETIONS_BACKUP_KEY);
+  } catch {
+    // ignore
   }
 }

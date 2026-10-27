@@ -24,9 +24,9 @@ export default defineConfig(() => {
           id: '/consistency-os/',
           name: 'Consistency OS',
           short_name: 'Consistency',
-          description: 'Personal health, fitness, habit-building, and digital discipline operating system.',
-          theme_color: '#09090b',
-          background_color: '#09090b',
+          description: 'Minimalist daily task calendar and consistency planner.',
+          theme_color: '#F6F7F9',
+          background_color: '#F6F7F9',
           display: 'standalone',
           orientation: 'portrait',
           start_url: '/consistency-os/',
@@ -57,8 +57,7 @@ export default defineConfig(() => {
           navigateFallback: '/consistency-os/index.html'
         },
         devOptions: {
-          enabled: true,
-          type: 'module'
+          enabled: false
         }
       })
     ],

@@ -1,178 +1,226 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  calculateSleepDurationMinutes,
-  formatMinutes,
-  calculateDailyCompletion,
-  calculateHabitStreak,
-  calculateDigitalAllowance,
-  calculateBodyTrend,
-  validateBackupData,
-  parseStepsFromText,
-  parseAppleHealthStepsExport,
-  type HabitItem,
-  type HabitLogItem,
-  type BodyRecord
-} from './calculations.ts';
+  formatLocalDate,
+  parseLocalDate,
+  getOffsetDateString,
+  getWeekDates,
+  getMonthCalendarGrid,
+  isTaskScheduledForDate,
+  getTasksForDate,
+  calculateDateProgress,
+  calculateProgressStats,
+  migrateLegacyHabitsToTasks,
+  validateBackupData
+} from './calculations';
+import { Task, TaskCompletion, LegacyHabit, LegacyHabitLog } from '../types';
 
-test('calculateSleepDurationMinutes correctly handles same-day sleep', () => {
-  // e.g. Nap or daytime rest: 13:00 to 14:30 = 90 mins
-  assert.equal(calculateSleepDurationMinutes('13:00', '14:30'), 90);
+test('formatLocalDate and parseLocalDate preserve local YYYY-MM-DD without drift', () => {
+  const parsed = parseLocalDate('2025-05-08');
+  assert.equal(formatLocalDate(parsed), '2025-05-08');
+  assert.equal(getOffsetDateString('2025-05-08', 1), '2025-05-09');
+  assert.equal(getOffsetDateString('2025-05-08', -8), '2025-04-30');
 });
 
-test('calculateSleepDurationMinutes correctly handles overnight sleep across midnight', () => {
-  // 23:15 to 07:30: 45 min before midnight + 450 min after = 495 mins
-  assert.equal(calculateSleepDurationMinutes('23:15', '07:30'), 495);
-  // 22:00 to 06:00: 2h + 6h = 8h = 480 mins
-  assert.equal(calculateSleepDurationMinutes('22:00', '06:00'), 480);
-  // 00:30 to 08:00 = 7h 30m = 450 mins
-  assert.equal(calculateSleepDurationMinutes('00:30', '08:00'), 450);
+test('getWeekDates returns 7 consecutive dates aligned to startOfWeek', () => {
+  // 2025-05-08 is a Thursday
+  const monWeek = getWeekDates('2025-05-08', 1);
+  assert.equal(monWeek.length, 7);
+  assert.equal(monWeek[0], '2025-05-05'); // Monday
+  assert.equal(monWeek[6], '2025-05-11'); // Sunday
+
+  const sunWeek = getWeekDates('2025-05-08', 0);
+  assert.equal(sunWeek[0], '2025-05-04'); // Sunday
+  assert.equal(sunWeek[6], '2025-05-10'); // Saturday
 });
 
-test('formatMinutes formats properly', () => {
-  assert.equal(formatMinutes(495), '8h 15m');
-  assert.equal(formatMinutes(60), '1h');
-  assert.equal(formatMinutes(45), '45m');
-  assert.equal(formatMinutes(0), '0m');
+test('getMonthCalendarGrid produces 35 or 42 aligned cells covering the month', () => {
+  const grid = getMonthCalendarGrid(2025, 4, 1); // May 2025, Monday start
+  assert.ok(grid.length === 35 || grid.length === 42);
+  const currentMonthCells = grid.filter(c => c.isCurrentMonth);
+  assert.equal(currentMonthCells.length, 31);
+  assert.equal(currentMonthCells[0].dateStr, '2025-05-01');
+  assert.equal(currentMonthCells[30].dateStr, '2025-05-31');
 });
 
-test('calculateDailyCompletion only counts habits scheduled for that day of week', () => {
-  // 2026-10-19 is a Monday (day 1)
-  const habits: HabitItem[] = [
+test('isTaskScheduledForDate handles once, daily, weekdays, and weekly recurrence accurately', () => {
+  const onceTask: Task = {
+    id: 't_once',
+    title: 'Dentist appointment',
+    recurrence: 'once',
+    date: '2025-05-08',
+    order: 1,
+    createdAt: '2025-05-01T00:00:00.000Z'
+  };
+  assert.equal(isTaskScheduledForDate(onceTask, '2025-05-08'), true);
+  assert.equal(isTaskScheduledForDate(onceTask, '2025-05-09'), false);
+
+  const dailyTask: Task = {
+    id: 't_daily',
+    title: 'Morning planning',
+    recurrence: 'daily',
+    date: '2025-05-05',
+    order: 2,
+    createdAt: '2025-05-05T00:00:00.000Z'
+  };
+  assert.equal(isTaskScheduledForDate(dailyTask, '2025-05-04'), false); // before start date
+  assert.equal(isTaskScheduledForDate(dailyTask, '2025-05-05'), true);
+  assert.equal(isTaskScheduledForDate(dailyTask, '2025-05-10'), true);
+
+  const weekdaysTask: Task = {
+    id: 't_weekdays',
+    title: 'Deep work block',
+    recurrence: 'weekdays',
+    date: '2025-05-01',
+    repeatDays: [1, 3, 5], // Mon, Wed, Fri
+    order: 3,
+    createdAt: '2025-05-01T00:00:00.000Z'
+  };
+  assert.equal(isTaskScheduledForDate(weekdaysTask, '2025-05-05'), true); // Monday
+  assert.equal(isTaskScheduledForDate(weekdaysTask, '2025-05-06'), false); // Tuesday
+  assert.equal(isTaskScheduledForDate(weekdaysTask, '2025-05-07'), true); // Wednesday
+
+  const weeklyTask: Task = {
+    id: 't_weekly',
+    title: 'Weekly review',
+    recurrence: 'weekly',
+    date: '2025-05-04', // Sunday
+    repeatDays: [0],
+    order: 4,
+    createdAt: '2025-05-04T00:00:00.000Z'
+  };
+  assert.equal(isTaskScheduledForDate(weeklyTask, '2025-05-04'), true);
+  assert.equal(isTaskScheduledForDate(weeklyTask, '2025-05-05'), false);
+  assert.equal(isTaskScheduledForDate(weeklyTask, '2025-05-11'), true);
+});
+
+test('completing a recurring task on one date does not mark other dates complete', () => {
+  const dailyTask: Task = {
+    id: 't_read',
+    title: 'Read 20 pages',
+    recurrence: 'daily',
+    date: '2025-05-01',
+    order: 1,
+    createdAt: '2025-05-01T00:00:00.000Z'
+  };
+
+  const completions: TaskCompletion[] = [
     {
-      id: 'h1',
-      name: 'Morning walk',
-      category: 'health',
-      targetType: 'boolean',
-      scheduleDays: [1, 2, 3, 4, 5], // Mon-Fri
-      order: 1
-    },
-    {
-      id: 'h2',
-      name: 'Weekend hike',
-      category: 'fitness',
-      targetType: 'boolean',
-      scheduleDays: [0, 6], // Sun, Sat only
-      order: 2
-    },
-    {
-      id: 'h3',
-      name: 'Read 20 mins',
-      category: 'mind',
-      targetType: 'duration',
-      scheduleDays: [0, 1, 2, 3, 4, 5, 6], // Daily
-      order: 3
+      id: '2025-05-08_t_read',
+      date: '2025-05-08',
+      taskId: 't_read',
+      completed: true,
+      updatedAt: '2025-05-08T10:00:00.000Z'
     }
   ];
 
-  // On Monday (2026-10-19): scheduled are h1 and h3 (total 2). h2 is NOT scheduled and must not count as failure.
-  const logs: HabitLogItem[] = [
-    { date: '2026-10-19', habitId: 'h1', completed: true },
-    { date: '2026-10-19', habitId: 'h3', completed: false }
-  ];
+  const may8 = getTasksForDate('2025-05-08', [dailyTask], completions);
+  const may9 = getTasksForDate('2025-05-09', [dailyTask], completions);
 
-  const result = calculateDailyCompletion('2026-10-19', habits, logs);
-  assert.equal(result.totalScheduled, 2);
-  assert.equal(result.completedCount, 1);
-  assert.equal(result.percentage, 50);
+  assert.equal(may8.length, 1);
+  assert.equal(may8[0].completed, true);
+
+  assert.equal(may9.length, 1);
+  assert.equal(may9[0].completed, false);
 });
 
-test('calculateHabitStreak preserves streak over unscheduled rest days', () => {
-  const habit: HabitItem = {
-    id: 'gym',
-    name: 'Strength Training',
-    category: 'fitness',
-    targetType: 'boolean',
-    scheduleDays: [1, 3, 5],
-    order: 1
-  };
-
-  const logs: HabitLogItem[] = [
-    { date: '2026-10-12', habitId: 'gym', completed: true },
-    { date: '2026-10-14', habitId: 'gym', completed: true },
-    { date: '2026-10-16', habitId: 'gym', completed: true },
-    { date: '2026-10-19', habitId: 'gym', completed: true }
+test('calculateDateProgress and calculateProgressStats compute accurate percentages', () => {
+  const tasks: Task[] = [
+    {
+      id: 't1',
+      title: 'Task 1',
+      recurrence: 'daily',
+      date: '2025-05-01',
+      order: 1,
+      createdAt: '2025-05-01T00:00:00.000Z'
+    },
+    {
+      id: 't2',
+      title: 'Task 2',
+      recurrence: 'daily',
+      date: '2025-05-01',
+      order: 2,
+      createdAt: '2025-05-01T00:00:00.000Z'
+    }
   ];
 
-  const result = calculateHabitStreak(habit, logs, '2026-10-19');
-  assert.equal(result.currentStreak, 4);
-  assert.equal(result.bestStreak, 4);
-  assert.equal(result.totalCompletions, 4);
-});
-
-test('calculateDigitalAllowance calculates remaining allowance and limits accurately', () => {
-  const appLimits = {
-    Instagram: 30,
-    YouTube: 45,
-    Reddit: 20
-  };
-
-  const sessions = [
-    { id: '1', date: '2026-10-19', app: 'Instagram', durationMinutes: 20, timestamp: 1 },
-    { id: '2', date: '2026-10-19', app: 'YouTube', durationMinutes: 50, timestamp: 2 }
+  const completions: TaskCompletion[] = [
+    {
+      id: '2025-05-08_t1',
+      date: '2025-05-08',
+      taskId: 't1',
+      completed: true,
+      updatedAt: '2025-05-08T09:00:00.000Z'
+    }
   ];
 
-  const allowance = calculateDigitalAllowance(appLimits, sessions, '2026-10-19');
-  assert.equal(allowance.totalAllowed, 95);
-  assert.equal(allowance.totalUsed, 70);
-  assert.equal(allowance.totalRemaining, 25);
-  assert.equal(allowance.appBreakdown['Instagram'].remaining, 10);
-  assert.equal(allowance.appBreakdown['YouTube'].isExceeded, true);
-  assert.equal(allowance.appBreakdown['Reddit'].remaining, 20);
+  const dayProg = calculateDateProgress('2025-05-08', tasks, completions);
+  assert.equal(dayProg.completedCount, 1);
+  assert.equal(dayProg.totalCount, 2);
+  assert.equal(dayProg.percentage, 50);
+
+  const stats = calculateProgressStats('2025-05-08', 1, tasks, completions);
+  assert.equal(stats.todayProgress.percentage, 50);
+  assert.equal(stats.totalCompletedAllTime, 1);
+  assert.equal(stats.activeDaysThisWeek, 1);
+  assert.equal(stats.currentStreak, 1);
 });
 
-test('calculateBodyTrend accurately tracks progress delta and start delta', () => {
-  const records: BodyRecord[] = [
-    { date: '2026-09-01', weight: 82.5 },
-    { date: '2026-09-15', weight: 81.8 },
-    { date: '2026-10-01', weight: 80.5 }
+test('migrateLegacyHabitsToTasks filters out fitness boilerplate and preserves routine/user habits', () => {
+  const legacyHabits: LegacyHabit[] = [
+    { id: 'habit_workout', name: 'Complete workout', scheduleDays: [1, 2, 3, 4, 5] },
+    { id: 'habit_daily_walk', name: 'Walk 8,000 steps', scheduleDays: [0, 1, 2, 3, 4, 5, 6] },
+    { id: 'habit_reading', name: 'Read for 20 minutes', routine: 'evening', scheduleDays: [0, 1, 2, 3, 4, 5, 6] },
+    { id: 'custom_1', name: 'Write journal notes', category: 'personal', scheduleDays: [1, 3, 5] }
   ];
 
-  const trend = calculateBodyTrend(records);
-  assert.equal(trend.startingWeight, 82.5);
-  assert.equal(trend.changeFromPrevious, -1.3); // 80.5 - 81.8
-  assert.equal(trend.changeFromStart, -2.0); // 80.5 - 82.5
+  const legacyLogs: LegacyHabitLog[] = [
+    { date: '2025-05-08', habitId: 'habit_workout', completed: true },
+    { date: '2025-05-08', habitId: 'habit_reading', completed: true },
+    { date: '2025-05-08', habitId: 'custom_1', completed: false }
+  ];
+
+  const migrated = migrateLegacyHabitsToTasks(legacyHabits, legacyLogs, '2025-05-01');
+  assert.equal(migrated.tasks.length, 2);
+  assert.equal(migrated.tasks[0].id, 'habit_reading');
+  assert.equal(migrated.tasks[0].recurrence, 'daily');
+  assert.equal(migrated.tasks[1].id, 'custom_1');
+  assert.equal(migrated.tasks[1].recurrence, 'weekdays');
+  assert.equal(migrated.completions.length, 1);
+  assert.equal(migrated.completions[0].taskId, 'habit_reading');
 });
 
-test('validateBackupData enforces schema and sanity checks', () => {
-  const validPayload = {
-    version: 1,
+test('validateBackupData accepts v2 planner backups and migrates v1 habit backups', () => {
+  const v2Backup = {
     appName: 'Consistency OS',
-    habits: [{ id: '1', name: 'Water' }],
-    settings: { theme: 'dark' }
+    version: 2,
+    tasks: [
+      {
+        id: 't1',
+        title: 'Plan day',
+        recurrence: 'daily',
+        date: '2025-05-01',
+        order: 1,
+        createdAt: '2025-05-01T00:00:00.000Z'
+      }
+    ],
+    taskCompletions: [],
+    settings: { theme: 'light', startOfWeek: 1 }
   };
-  const validation = validateBackupData(validPayload);
-  assert.equal(validation.valid, true);
 
-  const invalidPayload = { foo: 'bar' };
-  const invalidResult = validateBackupData(invalidPayload);
-  assert.equal(invalidResult.valid, false);
+  const resV2 = validateBackupData(v2Backup);
+  assert.equal(resV2.valid, true);
+  assert.equal(resV2.sanitizedData?.tasks.length, 1);
+
+  const v1Backup = {
+    appName: 'Consistency OS',
+    version: 1,
+    habits: [{ id: 'habit_reading', name: 'Read 20 minutes', scheduleDays: [0, 1, 2, 3, 4, 5, 6] }],
+    habitLogs: [{ date: '2025-05-08', habitId: 'habit_reading', completed: true }]
+  };
+
+  const resV1 = validateBackupData(v1Backup);
+  assert.equal(resV1.valid, true);
+  assert.equal(resV1.sanitizedData?.tasks.length, 1);
+  assert.equal(resV1.sanitizedData?.taskCompletions.length, 1);
 });
-
-test('parseStepsFromText extracts step counts from Apple Fitness strings and URL params', () => {
-  assert.equal(parseStepsFromText('8,432 steps'), 8432);
-  assert.equal(parseStepsFromText('?steps=10240&source=apple_fitness'), 10240);
-  assert.equal(parseStepsFromText('Apple Fitness Today: 9,150'), 9150);
-  assert.equal(parseStepsFromText('no numbers here'), null);
-});
-
-test('parseAppleHealthStepsExport aggregates Apple Health XML, CSV, and JSON step exports', () => {
-  const xmlSample = `
-    <HealthData>
-      <Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone 17 Pro" startDate="2026-10-18 09:15:00 -0700" value="3200" />
-      <Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone 17 Pro" startDate="2026-10-18 14:30:00 -0700" value="5100" />
-      <Record type="HKQuantityTypeIdentifierStepCount" sourceName="iPhone 17 Pro" startDate="2026-10-19 10:00:00 -0700" value="6450" />
-    </HealthData>
-  `;
-  const parsedXml = parseAppleHealthStepsExport(xmlSample);
-  assert.equal(parsedXml.length, 2);
-  assert.deepEqual(parsedXml[0], { date: '2026-10-18', steps: 8300 });
-  assert.deepEqual(parsedXml[1], { date: '2026-10-19', steps: 6450 });
-
-  const csvSample = `Date,Steps\n2026-10-17,7500\n2026-10-19,9200`;
-  const parsedCsv = parseAppleHealthStepsExport(csvSample);
-  assert.equal(parsedCsv.length, 2);
-  assert.deepEqual(parsedCsv[0], { date: '2026-10-17', steps: 7500 });
-  assert.deepEqual(parsedCsv[1], { date: '2026-10-19', steps: 9200 });
-});
-
